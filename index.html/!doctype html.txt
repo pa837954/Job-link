@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Share Your Location</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #f6f7f9; padding: 20px; }
+    .card { background: white; max-width: 520px; margin: 24px auto; padding: 20px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
+    .status { margin-top: 12px; font-size: 14px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Share Your Location</h2>
+    <p>Tick the box to share your current location one time. Your browser will ask permission.</p>
+
+    <label>
+      <input type="checkbox" id="consent" /> I agree to share my location.
+    </label>
+
+    <div id="status" class="status">Waiting for consent…</div>
+    <div id="result" class="status" style="display:none"></div>
+  </div>
+
+  <script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwVnF7dSwXAOqHDj-W1wOHQgkAD9feqOaems3Ujm1lqg4HlsPrynC1hBYr_tm7qt4En/exec';
+    const consent = document.getElementById('consent');
+    const statusBox = document.getElementById('status');
+    const resultBox = document.getElementById('result');
+    const note = new URLSearchParams(location.search).get('note') || '';
+
+    consent.addEventListener('change', () => {
+      if (!consent.checked) { statusBox.textContent = 'Waiting for consent…'; return; }
+      if (!('geolocation' in navigator)) { showError('Geolocation not supported by this device/browser.'); return; }
+
+      statusBox.textContent = 'Requesting location…';
+      navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      });
+    });
+
+    async function onSuccess(position) {
+      const { latitude: lat, longitude: lng, accuracy } = position.coords;
+      statusBox.textContent = 'Location received. Saving…';
+      try {
+        const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng, accuracy, userAgent: navigator.userAgent, note })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Unknown server error');
+
+        const mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
+        resultBox.style.display = 'block';
+        resultBox.innerHTML = `Saved! Coordinates: <span class="mono">${lat.toFixed(6)}, ${lng.toFixed(6)}</span> (±${Math.round(accuracy)} m)<br><a href="${mapsLink}" target="_blank" rel="noopener">Open in Google Maps</a>`;
+        statusBox.textContent = 'Done.';
+      } catch (err) {
+        showError('Could not save to the server: ' + err.message);
+      }
+    }
+
+    function onError(err) {
+      let message = 'Failed to get location.';
+      if (err && err.code === 1) message = 'Permission denied. You can allow location in your browser settings and try again.';
+      if (err && err.code === 2) message = 'Position unavailable. Try going outside or enabling GPS.';
+      if (err && err.code === 3) message = 'Timed out while fetching location. Please try again.';
+      showError(message);
+    }
+
+    function showError(msg) {
+      resultBox.style.display = 'block';
+      resultBox.innerHTML = `<span style="color:#b91c1c;">${msg}</span>`;
+      statusBox.textContent = 'Error.';
+    }
+  </script>
+</body>
+</html>
